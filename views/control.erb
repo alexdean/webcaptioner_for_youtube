@@ -1,0 +1,12 @@
+<html>
+<head>
+  <title>Caption Controls</title>
+</head>
+<body>
+  Captions are <strong><%= $enabled ? 'enabled' : 'disabled' %></strong>.
+  <form method="POST" action="/control">
+    <input type="submit" name="enabled" value="Enable" />
+    <input type="submit" name="enabled" value="Disable" />
+  </form>
+</body>
+</html>
