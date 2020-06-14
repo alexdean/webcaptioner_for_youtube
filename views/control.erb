@@ -1,12 +1,39 @@
 <html>
 <head>
   <title>Caption Controls</title>
+  <%= erb :_styles %>
+  <style>
+    #enable-button {
+      display: inline-block;
+      font-size: 24px;
+      margin-left: 30px;
+    }
+    .enabled {
+      color: #4d4;
+    }
+    .disabled {
+      color: #d44;
+    }
+  </style>
 </head>
 <body>
-  Captions are <strong><%= $enabled ? 'enabled' : 'disabled' %></strong>.
+<%
+  if enabled
+    current_text = 'enabled'
+    button_value = 'false'
+    button_text = 'DISABLE'
+  else
+    current_text = 'disabled'
+    button_value = 'true'
+    button_text = 'ENABLE'
+  end
+%>
   <form method="POST" action="/control">
-    <input type="submit" name="enabled" value="Enable" />
-    <input type="submit" name="enabled" value="Disable" />
+    Captions are <strong class="<%= current_text %>"><%= current_text %></strong>.
+    <button type="submit" id="enable-button" name="enabled" value="<%= button_value %>">
+      <%= button_text %>
+    </button>
   </form>
+  <!-- <a href="/setup">Setup</a> -->
 </body>
 </html>

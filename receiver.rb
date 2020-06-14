@@ -11,7 +11,7 @@ require 'logger'
 #
 # this is the endpoint we POST cue info to. it's specific to a live stream.
 # anyone with this URL can post cues to your stream, so it should be treated as private information.
-youtube_endpoint = 'http://upload.youtube.com/closedcaption?cid=9wbd-jcvx-0phb-6xh9-fj0a'
+$youtube_endpoint = 'http://upload.youtube.com/closedcaption?cid=9wbd-jcvx-0phb-6xh9-fj0a'
 
 log_file = File.open('output.txt', 'a')
 log_file.sync = true
@@ -59,7 +59,7 @@ Thread.new do
 
     if $enabled && !outbox.empty?
       $yt_post_sequence += 1
-      uri = URI("#{youtube_endpoint}&seq=#{$yt_post_sequence}")
+      uri = URI("#{$youtube_endpoint}&seq=#{$yt_post_sequence}")
 
       # webhooks can be received out of order
       # we need to sort by the webcaptioner sequence values
@@ -150,16 +150,28 @@ post '/captions' do
 end
 
 get '/control' do
-  erb :control, enabled: $enabled
+  erb(:control, locals: { enabled: $enabled })
 end
 
 post '/control' do
-  puts params.inspect
-  if params['enabled'] == 'Enable'
+  if params['enabled'] == 'true'
     $enabled = true
-  elsif params['enabled'] == 'Disable'
+  elsif params['enabled'] == 'false'
     $enabled = false
   end
 
-  erb :control, enabled: $enabled
+  erb(:control, locals: { enabled: $enabled })
+end
+
+get '/setup' do
+  erb(:setup, locals: { youtube_endpoint: $youtube_endpoint })
+end
+
+post '/setup' do
+  # TODO: persist this to a file, which is read on startup.
+  if params['youtube_endpoint']
+    $youtube_endpoint = params['youtube_endpoint']
+  end
+
+  erb(:setup, locals: { youtube_endpoint: $youtube_endpoint })
 end
