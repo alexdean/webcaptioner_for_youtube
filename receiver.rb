@@ -132,13 +132,13 @@ Thread.new do
   end
 end
 
+get '/' do
+  redirect '/setup'
+end
+
 post '/captions' do
   request.body.rewind
   data = JSON.parse(request.body.read)
-
-  # have to add a space after each transcript chunk, otherwise captions have no spaces between words.
-  # stripping because webcaptioner adds a "\n" when it thinks a line break should occur, but we
-  # want to let youtube decide where to put the breaks.
 
   $queue.push(
     QueuedCue.new(sequence: data['sequence'], transcript: data['transcript'])
@@ -173,5 +173,5 @@ post '/setup' do
     $youtube_endpoint = params['youtube_endpoint']
   end
 
-  erb(:setup, locals: { youtube_endpoint: $youtube_endpoint })
+  redirect '/control'
 end
