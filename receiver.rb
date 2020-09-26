@@ -2,6 +2,9 @@ require 'sinatra'
 require 'net/http'
 require 'time'
 require 'logger'
+require_relative 'lib/storage'
+
+$storage = Storage.new('data.yml')
 
 # docs for POST format
 # https://support.google.com/youtube/answer/6077032?&ref_topic=2853697
@@ -11,7 +14,7 @@ require 'logger'
 #
 # this is the endpoint we POST cue info to. it's specific to a live stream.
 # anyone with this URL can post cues to your stream, so it should be treated as private information.
-$youtube_endpoint = 'http://upload.youtube.com/closedcaption?cid=9wbd-jcvx-0phb-6xh9-fj0a'
+$youtube_endpoint = $storage.get('youtube_endpoint')
 
 log_file = File.open('output.txt', 'a')
 log_file.sync = true
@@ -168,9 +171,9 @@ get '/setup' do
 end
 
 post '/setup' do
-  # TODO: persist this to a file, which is read on startup.
   if params['youtube_endpoint']
     $youtube_endpoint = params['youtube_endpoint']
+    $storage.set('youtube_endpoint', $youtube_endpoint)
   end
 
   redirect '/control'
