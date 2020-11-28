@@ -36,5 +36,16 @@
     </button>
   </form>
   <a href="/setup">Setup</a>
+
+  <ul>
+  <% repeater_config.each do |key, config| %>
+    <li>
+        <%= key %>
+        <% if config.current %>
+         : <%= config.current[:label] %>. Change to <%= config.alternate[:label] %>?
+        <% end %>
+    </li>
+  <% end %>
+  </ul>
 </body>
 </html>

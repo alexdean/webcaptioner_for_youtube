@@ -3,8 +3,32 @@ require 'net/http'
 require 'time'
 require 'logger'
 require_relative 'lib/storage'
+require_relative 'lib/repeater_config'
+
+set :logging, false
+$request_log = Logger.new($stderr)
 
 $storage = Storage.new('data.yml')
+# valid repeat configs.
+$repeater_config = Marshal.load($storage.get('repeater_config'))
+$repeater_config_mutex = Mutex.new
+
+# thread that makes requests based on repeater_config, to keep tally lights alive.
+Thread.new do
+  repeater_config = nil
+
+  loop do
+    $repeater_config_mutex.synchronize do
+      repeater_config = $repeater_config.dup
+    end
+
+    repeater_config.each do |_key, item|
+      item.send_request
+    end
+
+    sleep 3
+  end
+end
 
 # docs for POST format
 # https://support.google.com/youtube/answer/6077032?&ref_topic=2853697
@@ -18,38 +42,14 @@ $youtube_endpoint = $storage.get('youtube_endpoint')
 
 log_file = File.open('output.txt', 'a')
 log_file.sync = true
-$log = Logger.new(log_file)
-$log.level = Logger::INFO
-$log.formatter = proc { |severity, datetime, progname, msg|
+$cue_log = Logger.new(log_file)
+$cue_log.level = Logger::INFO
+$cue_log.formatter = proc { |severity, datetime, progname, msg|
   "------------ #{datetime.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N')} ------------#{msg}"
 }
 
 $enabled = true
 $queue = Queue.new
-
-# cue text we've received which should be relayed to youtube.
-class QueuedCue
-  attr_reader :sequence, :transcript, :timestamp
-  def initialize(sequence:, transcript:)
-    @sequence = sequence,
-    @transcript = transcript
-    @timestamp = now_with_latency
-  end
-
-  def now_with_latency
-    # seconds to offset caption timing
-    # to account for webcaptioner latency
-    #
-    # webcaptioner supplies a sequence value for ordering, but does not provide
-    # timing info to know what time a given word was spoken. since there is
-    # some processing delay, assuming received-time is identical to spoken-time
-    # produces some drift between spoken words and on-screen captions. this
-    # latency value allows this to be tuned/accounted-for somewhat.
-    captioning_latency = 2.5
-
-    Time.now - captioning_latency
-  end
-end
 
 Thread.new do
   $yt_post_sequence = 0
@@ -99,7 +99,7 @@ Thread.new do
                             total_duration / desired_cue_count.to_f
                           end
 
-      $log.debug do
+      $cue_log.debug do
         "desired_cue_count:#{desired_cue_count}" \
         " max_time:#{max_time}" \
         " min_time:#{min_time}" \
@@ -124,8 +124,8 @@ Thread.new do
       # TODO handle & retry errors from YT endpoint
       # last_post_at = Time.now
       res = Net::HTTP.post(uri, payload)
-      $log.info "\n#{payload}"
-      $log.debug res.body.inspect
+      $cue_log.info "\n#{payload}"
+      $cue_log.debug res.body.inspect
 
       # TODO: response from YT is a timestamp (when the post was processed.)
       # use this to synchronize the clocks, to correct for drift on my local machine?
@@ -153,9 +153,15 @@ post '/captions' do
 end
 
 get '/control' do
-  erb(:control, locals: { enabled: $enabled })
+  repeater_config = nil
+  $repeater_config_mutex.synchronize do
+    repeater_config = $repeater_config.dup
+  end
+  erb(:control, locals: { enabled: $enabled, repeater_config: repeater_config })
 end
 
+# todo need to accept changes to repeat value
+# maybe post to /repeater and that can redirect to /control based on content-type
 post '/control' do
   if params['enabled'] == 'true'
     $enabled = true
@@ -163,7 +169,11 @@ post '/control' do
     $enabled = false
   end
 
-  erb(:control, locals: { enabled: $enabled })
+  repeater_config = nil
+  $repeater_config_mutex.synchronize do
+    repeater_config = $repeater_config.dup
+  end
+  erb(:control, locals: { enabled: $enabled, repeater_config: repeater_config })
 end
 
 get '/setup' do
@@ -177,4 +187,45 @@ post '/setup' do
   end
 
   redirect '/control'
+end
+
+get '/repeater' do
+  content_type 'application/json'
+
+  key = params[:key] # A
+  value = params[:value] # GREEN
+
+  repeater_config = nil
+  $repeater_config_mutex.synchronize do
+    repeater_config = $repeater_config[key]
+  end
+
+  errors = []
+
+  if !repeater_config
+    errors << "unknown key #{key}"
+  end
+
+  if errors.empty? && value != ''
+    ok = false
+
+    $repeater_config_mutex.synchronize do
+      ok = repeater_config.set_current(value)
+    end
+
+    if !ok
+      errors << "unknown value #{value} for key #{key}"
+    end
+  end
+
+  if errors.empty?
+    # want endpoint to complete as quickly as possible so OBS isn't blocked
+    Thread.new { repeater_config.send_request }
+
+    status 200
+    {status: 'ok'}.to_json
+  else
+    status 400
+    {status: 'error', errors: errors}.to_json
+  end
 end
