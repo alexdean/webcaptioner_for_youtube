@@ -30,6 +30,10 @@ class RepeaterConfig
     end
   end
 
+  def states
+    @states.values
+  end
+
   def current
     @current
   end

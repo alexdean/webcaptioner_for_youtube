@@ -4,16 +4,19 @@
   <title>Caption Controls</title>
   <%= erb :_styles %>
   <style>
-    #enable-button {
+    /*.button {
       display: inline-block;
       font-size: 24px;
       margin-left: 30px;
-    }
-    .enabled {
+    }*/
+    .enabled, .GREEN {
       color: #4d4;
     }
-    .disabled {
+    .disabled, .RED {
       color: #d44;
+    }
+    td {
+      vertical-align: middle;
     }
   </style>
 </head>
@@ -29,23 +32,35 @@
     button_text = 'ENABLE'
   end
 %>
-  <form method="POST" action="/control">
-    Captions are <strong class="<%= current_text %>"><%= current_text %></strong>.
-    <button type="submit" id="enable-button" name="enabled" value="<%= button_value %>">
-      <%= button_text %>
-    </button>
-  </form>
-  <a href="/setup">Setup</a>
+  <table>
+    <tr>
+      <td><strong class="<%= current_text %>">Captions are <%= current_text %></strong></td>
+      <td>
+        <form method="POST" action="/control">
+          <button type="submit" class="button" name="enabled" value="<%= button_value %>">
+            <%= button_text %>
+          </button>
+        </form>
+      </td>
+    </tr>
+    <% repeater_config.each do |key, config| %>
+      <% current_label = config.current ? config.current[:label] : '' %>
+      <tr>
+        <td>
+          <strong class="<%= current_label %>">Camera <%= key %> is <%= current_label %></strong>
+        </td>
+        <td>
+          <% if config.current %>
+            <%= erb(:_repeater_form, locals: {key: key, value: config.alternate[:label]}) %>
+          <% else %>
+            <%= erb(:_repeater_form, locals: {key: key, value: config.states[0][:label]}) %>
+            <%= erb(:_repeater_form, locals: {key: key, value: config.states[1][:label]}) %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </table>
 
-  <ul>
-  <% repeater_config.each do |key, config| %>
-    <li>
-        <%= key %>
-        <% if config.current %>
-         : <%= config.current[:label] %>. Change to <%= config.alternate[:label] %>?
-        <% end %>
-    </li>
-  <% end %>
-  </ul>
+  <a href="/setup">Setup</a>
 </body>
 </html>

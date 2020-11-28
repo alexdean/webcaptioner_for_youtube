@@ -189,7 +189,7 @@ post '/setup' do
   redirect '/control'
 end
 
-get '/repeater' do
+post '/repeater' do
   content_type 'application/json'
 
   key = params[:key] # A
@@ -206,7 +206,7 @@ get '/repeater' do
     errors << "unknown key #{key}"
   end
 
-  if errors.empty? && value != ''
+  if errors.empty?
     ok = false
 
     $repeater_config_mutex.synchronize do
@@ -221,11 +221,18 @@ get '/repeater' do
   if errors.empty?
     # want endpoint to complete as quickly as possible so OBS isn't blocked
     Thread.new { repeater_config.send_request }
-
+    ok = true
     status 200
-    {status: 'ok'}.to_json
+    body = {status: 'ok'}.to_json
   else
+    ok = false
     status 400
-    {status: 'error', errors: errors}.to_json
+    body = {status: 'error', errors: errors}.to_json
+  end
+
+  if ok && request.env['CONTENT_TYPE'] == "application/x-www-form-urlencoded"
+    redirect '/control'
+  else
+    body
   end
 end
