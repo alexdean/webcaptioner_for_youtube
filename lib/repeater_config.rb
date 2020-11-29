@@ -23,7 +23,12 @@ class RepeaterConfig
 
   def send_request
     if @current
-      Net::HTTP.get(URI(@current[:url]))
+      begin
+        Net::HTTP.get(URI(@current[:url]))
+      rescue Errno::ECONNREFUSED, Errno::ETIMEDOUT => e
+        # TODO better logging
+        puts "caught #{e.class} from #{@current[:url]}"
+      end
       true
     else
       false
