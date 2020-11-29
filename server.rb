@@ -189,7 +189,7 @@ post '/setup' do
   redirect '/control'
 end
 
-post '/repeater' do
+repeater_proc = lambda do
   content_type 'application/json'
 
   key = params[:key] # A
@@ -236,3 +236,6 @@ post '/repeater' do
     body
   end
 end
+
+get '/repeater', &repeater_proc
+post '/repeater', &repeater_proc
