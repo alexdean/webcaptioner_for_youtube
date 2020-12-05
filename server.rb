@@ -4,9 +4,10 @@ require 'time'
 require 'logger'
 require_relative 'lib/storage'
 require_relative 'lib/repeater'
+require_relative 'lib/youtube_emitter'
 
 $storage = Storage.new('data.yml')
-# valid repeat configs.
+
 $repeater = Marshal.load($storage.get('repeater'))
 $repeater_mutex = Mutex.new
 
@@ -27,110 +28,21 @@ Thread.new do
   end
 end
 
-# docs for POST format
-# https://support.google.com/youtube/answer/6077032?&ref_topic=2853697
-#
-# my stream setup
-# https://studio.youtube.com/channel/UCEX9BscEMpJfaASiewenbYg/livestreaming/dashboard?v=dt-jMQXntJE
-#
-# this is the endpoint we POST cue info to. it's specific to a live stream.
-# anyone with this URL can post cues to your stream, so it should be treated as private information.
-$youtube_endpoint = $storage.get('youtube_endpoint')
-
 log_file = File.open('output.txt', 'a')
 log_file.sync = true
-$cue_log = Logger.new(log_file)
-$cue_log.level = Logger::INFO
-$cue_log.formatter = proc { |severity, datetime, progname, msg|
-  "------------ #{datetime.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N')} ------------#{msg}"
+cue_log = Logger.new(log_file)
+cue_log.level = Logger::DEBUG
+cue_log.formatter = proc { |severity, datetime, progname, msg|
+  "------------ #{datetime.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N')} ------------\n#{msg}\n"
 }
 
-$enabled = true
-$queue = Queue.new
+$emitter = YoutubeEmitter.new(
+             endpoint: $storage.get('youtube_endpoint'),
+             logger: cue_log,
+             enabled: true
+           )
 
-Thread.new do
-  $yt_post_sequence = 0
-
-  loop do
-    outbox = []
-    while !$queue.empty?
-      outbox << $queue.pop
-    end
-
-    if $enabled && !outbox.empty?
-      $yt_post_sequence += 1
-      uri = URI("#{$youtube_endpoint}&seq=#{$yt_post_sequence}")
-
-      # webhooks can be received out of order
-      # we need to sort by the webcaptioner sequence values
-      # since sequence is more correct that the recieved-at timestamps,
-      # we will assign each cue to a time based on linear interpolation of
-      # the min and max times we see.
-
-      desired_words_per_cue = 1
-
-      now = Time.now
-      min_time = now + (3600 * 24)
-      max_time = now - (3600 * 24)
-
-      outbox.each do |cue|
-        if cue.timestamp < min_time
-          min_time = cue.timestamp
-        end
-
-        if cue.timestamp > max_time
-          max_time = cue.timestamp
-        end
-      end
-
-      total_duration = max_time - min_time
-
-      words = outbox
-                .sort_by {|cue| cue.sequence }
-                .map { |cue| cue.transcript.strip } # strip to remove newlines sometimes added by webcaptioner
-
-      time_between_cues = if total_duration == 0
-                            0
-                          else
-                            desired_cue_count = (words.size / desired_words_per_cue.to_f).ceil
-                            total_duration / desired_cue_count.to_f
-                          end
-
-      $cue_log.debug do
-        "desired_cue_count:#{desired_cue_count}" \
-        " max_time:#{max_time}" \
-        " min_time:#{min_time}" \
-        " total_duration:#{total_duration}" \
-        " time_between_cues:#{time_between_cues}"
-      end
-
-      output = []
-      current_cue_time = min_time
-      loop do
-        cue_words = words.shift(desired_words_per_cue)
-        break if cue_words.size == 0
-
-        output << current_cue_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N') + "\n" + cue_words.join(' ') + ' '
-
-        current_cue_time = current_cue_time + time_between_cues
-      end
-
-      # POST body must end with a final \n or YT rejects the post. ("unable to parse post body.")
-      payload = output.join("\n") + "\n"
-
-      # TODO handle & retry errors from YT endpoint
-      # last_post_at = Time.now
-      res = Net::HTTP.post(uri, payload)
-      $cue_log.info "\n#{payload}"
-      $cue_log.debug res.body.inspect
-
-      # TODO: response from YT is a timestamp (when the post was processed.)
-      # use this to synchronize the clocks, to correct for drift on my local machine?
-    end
-
-    sleep 0.2
-  end
-end
+Thread.new { $emitter.run }
 
 get '/' do
   redirect '/setup'
@@ -140,9 +52,7 @@ post '/captions' do
   request.body.rewind
   data = JSON.parse(request.body.read)
 
-  $queue.push(
-    QueuedCue.new(sequence: data['sequence'], transcript: data['transcript'])
-  )
+  $emitter.enqueue(sequence: data['sequence'], transcript: data['transcript'])
 
   status 200
   content_type 'application/json'
@@ -154,33 +64,33 @@ get '/control' do
   $repeater_mutex.synchronize do
     repeater = $repeater.dup
   end
-  erb(:control, locals: { enabled: $enabled, repeater: repeater })
+  erb(:control, locals: { enabled: $emitter.enabled, repeater: repeater })
 end
 
 # todo need to accept changes to repeat value
 # maybe post to /repeater and that can redirect to /control based on content-type
 post '/control' do
   if params['enabled'] == 'true'
-    $enabled = true
+    $emitter.enabled = true
   elsif params['enabled'] == 'false'
-    $enabled = false
+    $emitter.enabled = false
   end
 
   repeater = nil
   $repeater_mutex.synchronize do
     repeater = $repeater.dup
   end
-  erb(:control, locals: { enabled: $enabled, repeater: repeater })
+  erb(:control, locals: { enabled: $emitter.enabled, repeater: repeater })
 end
 
 get '/setup' do
-  erb(:setup, locals: { youtube_endpoint: $youtube_endpoint })
+  erb(:setup, locals: { youtube_endpoint: $emitter.endpoint })
 end
 
 post '/setup' do
   if params['youtube_endpoint']
-    $youtube_endpoint = params['youtube_endpoint']
-    $storage.set('youtube_endpoint', $youtube_endpoint)
+    $emitter.endpoint = params['youtube_endpoint']
+    $storage.set('youtube_endpoint', $emitter.endpoint)
   end
 
   redirect '/control'
