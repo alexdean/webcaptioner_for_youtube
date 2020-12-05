@@ -28,21 +28,25 @@ Thread.new do
   end
 end
 
-log_file = File.open('output.txt', 'a')
+log_file = File.open('log.txt', 'a')
 log_file.sync = true
 cue_log = Logger.new(log_file)
 cue_log.level = Logger::DEBUG
-cue_log.formatter = proc { |severity, datetime, progname, msg|
-  "------------ #{datetime.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N')} ------------\n#{msg}\n"
-}
+# cue_log.formatter = proc { |severity, datetime, progname, msg|
+#   "------------ #{datetime.utc.strftime('%Y-%m-%dT%H:%M:%S.%3N')} ------------\n#{msg}\n"
+# }
+
+transcript = File.open('transcript.txt', 'a')
+transcript.sync = true
 
 $emitter = YoutubeEmitter.new(
              endpoint: $storage.get('youtube_endpoint'),
              logger: cue_log,
-             enabled: true
+             enabled: true,
+             transcript: transcript
            )
 
-Thread.new { $emitter.run }
+$emitter.run_async
 
 get '/' do
   redirect '/setup'
@@ -52,7 +56,7 @@ post '/captions' do
   request.body.rewind
   data = JSON.parse(request.body.read)
 
-  $emitter.enqueue(sequence: data['sequence'], transcript: data['transcript'])
+  $emitter.enqueue(data['sequence'], data['transcript'])
 
   status 200
   content_type 'application/json'
