@@ -3,26 +3,23 @@ require 'net/http'
 require 'time'
 require 'logger'
 require_relative 'lib/storage'
-require_relative 'lib/repeater_config'
-
-set :logging, false
-$request_log = Logger.new($stderr)
+require_relative 'lib/repeater'
 
 $storage = Storage.new('data.yml')
 # valid repeat configs.
-$repeater_config = Marshal.load($storage.get('repeater_config'))
-$repeater_config_mutex = Mutex.new
+$repeater = Marshal.load($storage.get('repeater'))
+$repeater_mutex = Mutex.new
 
-# thread that makes requests based on repeater_config, to keep tally lights alive.
+# thread that makes requests based on repeater, to keep tally lights alive.
 Thread.new do
-  repeater_config = nil
+  repeater = nil
 
   loop do
-    $repeater_config_mutex.synchronize do
-      repeater_config = $repeater_config.dup
+    $repeater_mutex.synchronize do
+      repeater = $repeater.dup
     end
 
-    repeater_config.each do |_key, item|
+    repeater.each do |_key, item|
       item.send_request
     end
 
@@ -153,11 +150,11 @@ post '/captions' do
 end
 
 get '/control' do
-  repeater_config = nil
-  $repeater_config_mutex.synchronize do
-    repeater_config = $repeater_config.dup
+  repeater = nil
+  $repeater_mutex.synchronize do
+    repeater = $repeater.dup
   end
-  erb(:control, locals: { enabled: $enabled, repeater_config: repeater_config })
+  erb(:control, locals: { enabled: $enabled, repeater: repeater })
 end
 
 # todo need to accept changes to repeat value
@@ -169,11 +166,11 @@ post '/control' do
     $enabled = false
   end
 
-  repeater_config = nil
-  $repeater_config_mutex.synchronize do
-    repeater_config = $repeater_config.dup
+  repeater = nil
+  $repeater_mutex.synchronize do
+    repeater = $repeater.dup
   end
-  erb(:control, locals: { enabled: $enabled, repeater_config: repeater_config })
+  erb(:control, locals: { enabled: $enabled, repeater: repeater })
 end
 
 get '/setup' do
@@ -195,22 +192,22 @@ repeater_proc = lambda do
   key = params[:key] # A
   value = params[:value] # GREEN
 
-  repeater_config = nil
-  $repeater_config_mutex.synchronize do
-    repeater_config = $repeater_config[key]
+  repeater = nil
+  $repeater_mutex.synchronize do
+    repeater = $repeater[key]
   end
 
   errors = []
 
-  if !repeater_config
+  if !repeater
     errors << "unknown key #{key}"
   end
 
   if errors.empty?
     ok = false
 
-    $repeater_config_mutex.synchronize do
-      ok = repeater_config.set_current(value)
+    $repeater_mutex.synchronize do
+      ok = repeater.set_current(value)
     end
 
     if !ok
@@ -220,7 +217,7 @@ repeater_proc = lambda do
 
   if errors.empty?
     # want endpoint to complete as quickly as possible so OBS isn't blocked
-    Thread.new { repeater_config.send_request }
+    Thread.new { repeater.send_request }
     ok = true
     status 200
     body = {status: 'ok'}.to_json

@@ -1,12 +1,12 @@
 require 'test_helper'
-require_relative '../../lib/repeater_config'
+require_relative '../../lib/repeater'
 
-describe RepeaterConfig do
+describe Repeater do
   before do
     @red_config = { label: 'RED', url:'http://10.4.2.12/RED', color: '#FF0000' }
     @green_config = { label: 'GREEN', url:'http://10.4.2.12/GREEN', color: '#00FF00' }
 
-    @subject = RepeaterConfig.new([
+    @subject = Repeater.new([
       @red_config,
       @green_config
     ])
@@ -15,18 +15,18 @@ describe RepeaterConfig do
   describe '#initialize' do
     it 'raises an error if not given exactly 2 config hashes' do
       assert_raises(ArgumentError) do
-        RepeaterConfig.new
+        Repeater.new
       end
 
       assert_raises(ArgumentError) do
-        RepeaterConfig.new([{}])
+        Repeater.new([{}])
       end
 
       assert_raises(ArgumentError) do
-        RepeaterConfig.new([{}, {}, {}])
+        Repeater.new([{}, {}, {}])
       end
 
-      RepeaterConfig.new([{}, {}])
+      Repeater.new([{}, {}])
     end
   end
 

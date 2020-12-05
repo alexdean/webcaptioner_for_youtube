@@ -1,4 +1,4 @@
-class RepeaterConfig
+class Repeater
   def initialize(states)
     @current = nil
     @alternate = nil
