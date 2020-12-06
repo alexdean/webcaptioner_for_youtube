@@ -41,12 +41,14 @@ transcript.sync = true
 
 $emitter = YoutubeEmitter.new(
              endpoint: $storage.get('youtube_endpoint'),
-             logger: cue_log,
              enabled: true,
+             send_heartbeat: true,
+             latency: 0,
+             logger: cue_log,
              transcript: transcript
            )
 
-$emitter.run_async
+$emitter.start_async
 
 get '/' do
   redirect '/setup'
